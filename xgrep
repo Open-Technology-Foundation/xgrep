@@ -1,0 +1,269 @@
+#!/bin/bash
+#shellcheck disable=SC2034,SC1091,SC2155
+set -euo pipefail
+readonly -- VERSION='1.2.0'
+readonly -- PRG0="$(readlink -en -- "$0")"
+readonly -- PRGDIR="${PRG0%/*}"
+
+declare -- PRG MODE RG_TYPE
+PRG="${0##*/}"
+
+# Determine ripgrep binary name (rg or ripgrep) or fall back to grep
+RG_CMD=""
+if command -v rg >/dev/null 2>&1; then
+  RG_CMD="rg"
+elif command -v ripgrep >/dev/null 2>&1; then
+  RG_CMD="ripgrep"
+else
+  echo "Warning: ripgrep (rg) not found. Falling back to standard grep (reduced performance)." >&2
+  echo "For better performance, install ripgrep: https://github.com/BurntSushi/ripgrep#installation" >&2
+  RG_CMD="grep_fallback"
+fi
+
+# Set mode-specific settings based on the program name
+if [[ $PRG == phpgrep ]]; then
+  MODE="PHP"
+  RG_TYPE="--type=php"
+elif [[ $PRG == bashgrep ]]; then
+  MODE="Bash"
+  RG_TYPE="--type=sh"
+elif [[ $PRG == pygrep ]]; then
+  MODE="Python"
+  RG_TYPE="--type=py"
+else
+  MODE="Bash/PHP/Python"
+  RG_TYPE="--type=sh --type=php --type=py"
+  
+  # Only create symlinks if we have write permission to the directory
+  if [[ ! -L /usr/local/bin/pygrep && -w /usr/local/bin ]]; then
+    ( cd /usr/local/bin
+      ln -sf "$PRG0" bashgrep || true
+      ln -sf "$PRG0" phpgrep || true
+      ln -sf "$PRG0" pygrep || true
+      ln -sf "$PRG0" xgrep || true
+    )
+  fi
+fi
+
+# Default excluded directories - can be overridden via environment variable
+declare -a EXCLUDE_DIRS=( .venv .gudang gudang .git bak '~' temp tmp .tmp .temp .Trash-0)
+[[ -n "${XGREP_EXCLUDE_DIRS:-}" ]] && readarray -td' ' EXCLUDE_DIRS < <(echo -n "$XGREP_EXCLUDE_DIRS")
+
+# Helper functions for error handling
+declare -i DEBUG=0
+error() { local msg; for msg in "$@"; do >&2 printf '%s: error: %s\n' "$PRG" "$msg"; done; }
+die() { local -i exitcode=1; if (($#)); then exitcode=$1; shift; fi; if (($#)); then error "$@"; fi; exit "$exitcode"; }
+noarg() { if (($# < 2)) || [[ ${2:0:1} == '-' ]]; then die 2 "Missing argument for option '$1'"; fi; true; }
+xcleanup() { local -i exitcode=${1:-0}; [[ -t 0 ]] && printf '\e[?25h'; exit "$exitcode"; }
+trap 'xcleanup $?' SIGINT EXIT
+decp() { declare -p "$@" | sed 's/^declare -[a-z-]* //'; }
+
+# Fallback function that mimics ripgrep using find + grep
+run_grep_fallback() {
+  local pattern="$1"
+  local directory="$2"
+  local maxdepth="$3"
+  shift 3
+  local -a grep_opts=("$@")
+  local -i use_color=0
+  local -a files=()
+  local -a find_opts=()
+  local -a find_type_opts=()
+  local exclude_dir
+  local -a exclude_opts=()
+  
+  # Process ripgrep options and convert to grep/find options
+  for opt in "${grep_opts[@]}"; do
+    case "$opt" in
+      --color=auto) use_color=1 ;;
+      --type=sh)    find_type_opts+=(-name "*.bash" -o -name "*.sh") ;;
+      --type=php)   find_type_opts+=(-o -name "*.php" -o -name "*.phtml") ;;
+      --type=py)    find_type_opts+=(-o -name "*.py" -o -name "*.pyw") ;;
+      --smart-case) grep_opts=("-i") ;;
+      --glob)       continue ;; # Skip, handled separately
+      *)            grep_opts+=("$opt") ;;
+    esac
+  done
+  
+  # Add color if requested
+  ((use_color)) && [[ -t 1 ]] && grep_opts+=("--color=auto")
+  
+  # Set up find depth options
+  if ((maxdepth >= 0)); then
+    find_opts+=("-maxdepth" "$maxdepth")
+  fi
+  
+  # Set up exclusion options
+  for exclude_dir in "${EXCLUDE_DIRS[@]}"; do
+    [[ -n "$exclude_dir" ]] && exclude_opts+=(-not -path "*/$exclude_dir/*")
+  done
+  
+  # Remove the first -o if it exists since we start with it
+  if [[ ${#find_type_opts[@]} -gt 0 && "${find_type_opts[0]}" == "-o" ]]; then
+    find_type_opts=("${find_type_opts[@]:1}")
+  fi
+  
+  # Debug output
+  ((DEBUG)) && {
+    >&2 echo "DEBUG: Fallback mode with find+grep"
+    >&2 echo "DEBUG: find_opts=${find_opts[*]}"
+    >&2 echo "DEBUG: find_type_opts=${find_type_opts[*]}"
+    >&2 echo "DEBUG: exclude_opts=${exclude_opts[*]}"
+    >&2 echo "DEBUG: grep_opts=${grep_opts[*]}"
+  }
+  
+  # Find files with matching extensions
+  while IFS= read -r -d '' file; do
+    files+=("$file")
+  done < <(find "$directory" "${find_opts[@]}" "${exclude_opts[@]}" \
+            -type f \( "${find_type_opts[@]}" \) -print0 2>/dev/null || true)
+  
+  # If no files found, exit early
+  if ((${#files[@]} == 0)); then
+    >&2 echo "No files found"
+    return 1
+  fi
+  
+  # Run grep on the files
+  if ! grep "${grep_opts[@]}" "$pattern" "${files[@]}"; then
+    # Only report if grep's exit code was not 0 (no matches) or 1 (normal no matches)
+    if [[ $? -ne 0 && $? -ne 1 ]]; then
+      >&2 echo "Error searching for '$pattern' in $MODE files"
+      return 2
+    else
+      >&2 echo "No $MODE files found with pattern '$pattern'"
+      return 1
+    fi
+  fi
+  return 0
+}
+# ----------------------------------------------------------------------------------------
+
+usage() {
+  cat <<EOT
+$PRG $VERSION - Grep $MODE files using ripgrep
+
+Description:
+  Grep for pattern in $MODE files using ripgrep (rg)
+
+Usage:
+  $PRG [options] [ripgrep_options] pattern [directory]
+
+  pattern     Any valid ripgrep pattern
+  directory   Default is current directory
+
+Options:
+  -d, --maxdepth N
+                maxdepth defaults to unlimited. Set to limit search depth.
+  -X, --exclude-dir DIR[,...]
+                Exclude directory from search. This option may be used
+                multiple times.  -X '' will reset all exclusions.
+                Currently: ${EXCLUDE_DIRS[*]}
+                Can be overridden with envvar XGREP_EXCLUDE_DIRS.
+  --, --rg ...  Send all following options and arguments to ripgrep
+  -D, --debug   Default false
+  -V, --version Display version ($VERSION)
+  --help        Display help
+
+See Also:
+  $( echo 'xgrep bashgrep phpgrep pygrep ' |sed "s/$PRG //")
+
+Examples:
+  $PRG sometext
+  $PRG -X '' -l sometext ../..
+EOT
+  exit "${1:-0}"
+}
+
+main() {
+  local -i DEBUG=0
+  local -a rg_opts=()
+  local -a args=()
+  local -i maxdepth=-1
+  local pattern directory
+
+  # Add color if output is to a terminal
+  [[ -t 1 ]] && rg_opts+=("--color=auto")
+  
+  # Add the type filter by default
+  rg_opts+=($RG_TYPE)
+  
+  # Add smart case by default (case insensitive unless pattern contains uppercase)
+  rg_opts+=("--smart-case")
+  
+  (($#)) || usage 1
+
+  # Parse arguments
+  while (($#)); do case "$1" in
+    -X|--exclude-dir) noarg "$@"; shift
+                      if [[ -z "$1" ]]; then 
+                        EXCLUDE_DIRS=()
+                      else 
+                        readarray -td, EXCLUDE_DIRS < <(echo -n "$1")
+                      fi
+                      ;;
+    -d|--maxdepth)    noarg "$@"; shift
+                      if ! [[ $1 =~ ^[0-9]+$ ]]; then
+                        die 2 "maxdepth must be a non-negative integer"
+                      fi
+                      maxdepth=$1 
+                      ;;
+    --help)           usage 0 ;;
+    -D|--debug)       DEBUG=1 ;;
+    -V|--version)     echo "$VERSION"; exit 0 ;;
+    --|--rg)          shift
+                      (($#)) && rg_opts+=( "$@" );
+                      break
+                      ;;
+    -*)               rg_opts+=("$1") ;;
+    *)                args+=("$1") ;;
+  esac; shift; done
+
+  # Check number of arguments
+  [[ ${#args[@]} -eq 0 || ${#args[@]} -gt 2 ]] && die 1 "Invalid number of arguments."
+
+  # Set search pattern and directory
+  pattern="${args[0]}"
+  [[ -z "$pattern" ]] && die 1 "Search pattern cannot be empty."
+
+  directory="${args[1]:-$PWD}"
+  [[ ! -d "$directory" ]] && die 1 "Directory '$directory' does not exist."
+
+  # Add maxdepth if specified
+  if ((maxdepth >= 0)); then
+    rg_opts+=("--max-depth" "$maxdepth")
+  fi
+
+  # Add exclude directories
+  for exclude_dir in "${EXCLUDE_DIRS[@]}"; do
+    [[ -n "$exclude_dir" ]] && rg_opts+=("--glob" "!$exclude_dir/**")
+  done
+
+  # Debug output
+  ((DEBUG)) && { 
+    >&2 echo "DEBUG: RG_CMD=$RG_CMD"
+    >&2 echo "DEBUG: RG_TYPE=$RG_TYPE"
+    >&2 echo "DEBUG: pattern=$pattern"
+    >&2 echo "DEBUG: directory=$directory"
+    >&2 echo "DEBUG: exclude_dirs=${EXCLUDE_DIRS[*]}"
+    >&2 echo "DEBUG: ripgrep options: ${rg_opts[*]}"
+  }
+
+  # Run ripgrep with our options (or fallback to grep with find)
+  if [[ "$RG_CMD" == "grep_fallback" ]]; then
+    # Fallback to the original find + grep method
+    run_grep_fallback "$pattern" "$directory" "$maxdepth" "${rg_opts[@]}"
+  else
+    # Use ripgrep directly
+    if ! "$RG_CMD" "${rg_opts[@]}" "$pattern" "$directory"; then
+      # Check if it's a normal "no matches" exit code (1)
+      if [[ $? -eq 1 ]]; then
+        >&2 echo "No $MODE files found with pattern '$pattern'"
+      else
+        >&2 echo "Error searching for '$pattern' in $MODE files"
+      fi
+    fi
+  fi
+}
+
+main "$@"
