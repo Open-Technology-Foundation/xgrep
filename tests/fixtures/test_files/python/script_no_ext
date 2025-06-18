@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+# Python script without extension
+
+def shebang_test():
+    print("test function")
+    pattern = "no_extension_test"

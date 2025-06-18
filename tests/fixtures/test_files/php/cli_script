@@ -1,0 +1,6 @@
+#!/usr/bin/env php
+<?php
+// PHP script without extension, identified by shebang
+
+echo "test CLI script\n";
+$shebang_pattern = "php_test";

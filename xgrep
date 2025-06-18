@@ -1,14 +1,30 @@
 #!/bin/bash
+# xgrep - Advanced Language-Specific Grep Tool
+#
+# A collection of specialized grep tools that search within specific language files
+# by extension and shebang detection. Utilizes ripgrep for performance when available,
+# with graceful fallback to standard grep.
+#
+# Usage: xgrep|bashgrep|phpgrep|pygrep [options] pattern [directory]
+#
+# Author: Gary Dean - Open Technology Foundation
+# License: GPL-3.0
+# Version: 1.2.0
+
 #shellcheck disable=SC2034,SC1091,SC2155
 set -euo pipefail
+
+# Version and path constants
 readonly -- VERSION='1.2.0'
 readonly -- PRG0="$(readlink -en -- "$0")"
 readonly -- PRGDIR="${PRG0%/*}"
 
+# Program behavior variables - determined by invocation name
 declare -- PRG MODE RG_TYPE
 PRG="${0##*/}"
 
-# Determine ripgrep binary name (rg or ripgrep) or fall back to grep
+# Determine available search command
+# Prefers ripgrep (rg/ripgrep) for performance, falls back to custom grep implementation
 RG_CMD=""
 if command -v rg >/dev/null 2>&1; then
   RG_CMD="rg"
@@ -20,7 +36,8 @@ else
   RG_CMD="grep_fallback"
 fi
 
-# Set mode-specific settings based on the program name
+# Configure search behavior based on program invocation name
+# Each symlinked name targets specific file types using ripgrep's built-in type filters
 if [[ $PRG == phpgrep ]]; then
   MODE="PHP"
   RG_TYPE="--type=php"
@@ -31,10 +48,11 @@ elif [[ $PRG == pygrep ]]; then
   MODE="Python"
   RG_TYPE="--type=py"
 else
+  # Default behavior for 'xgrep' - search all supported languages
   MODE="Bash/PHP/Python"
   RG_TYPE="--type=sh --type=php --type=py"
   
-  # Only create symlinks if we have write permission to the directory
+  # Auto-create convenience symlinks when run as 'xgrep' (if permissions allow)
   if [[ ! -L /usr/local/bin/pygrep && -w /usr/local/bin ]]; then
     ( cd /usr/local/bin
       ln -sf "$PRG0" bashgrep || true
@@ -45,20 +63,64 @@ else
   fi
 fi
 
-# Default excluded directories - can be overridden via environment variable
+# Default excluded directories - can be overridden via XGREP_EXCLUDE_DIRS environment variable
+# Common directories containing build artifacts, dependencies, or temporary files
 declare -a EXCLUDE_DIRS=( .venv .gudang gudang .git bak '~' temp tmp .tmp .temp .Trash-0)
 [[ -n "${XGREP_EXCLUDE_DIRS:-}" ]] && readarray -td' ' EXCLUDE_DIRS < <(echo -n "$XGREP_EXCLUDE_DIRS")
 
-# Helper functions for error handling
-declare -i DEBUG=0
-error() { local msg; for msg in "$@"; do >&2 printf '%s: error: %s\n' "$PRG" "$msg"; done; }
-die() { local -i exitcode=1; if (($#)); then exitcode=$1; shift; fi; if (($#)); then error "$@"; fi; exit "$exitcode"; }
-noarg() { if (($# < 2)) || [[ ${2:0:1} == '-' ]]; then die 2 "Missing argument for option '$1'"; fi; true; }
-xcleanup() { local -i exitcode=${1:-0}; [[ -t 0 ]] && printf '\e[?25h'; exit "$exitcode"; }
-trap 'xcleanup $?' SIGINT EXIT
-decp() { declare -p "$@" | sed 's/^declare -[a-z-]* //'; }
+#=== Helper Functions ===
 
-# Fallback function that mimics ripgrep using find + grep
+declare -i DEBUG=0
+
+# Print formatted error messages to stderr
+# Args: msg... - Error messages to display
+error() { 
+  local msg
+  for msg in "$@"; do 
+    >&2 printf '%s: error: %s\n' "$PRG" "$msg"
+  done
+}
+
+# Exit with error code and optional error message
+# Args: [exit_code] [msg...] - Exit code (default: 1) and error messages
+die() { 
+  local -i exitcode=1
+  if (($#)); then exitcode=$1; shift; fi
+  if (($#)); then error "$@"; fi
+  exit "$exitcode"
+}
+
+# Validate that an option has a required argument
+# Args: option current_arg - The option name and its argument
+noarg() { 
+  if (($# < 2)) || [[ ${2:0:1} == '-' ]]; then 
+    die 2 "Missing argument for option '$1'"
+  fi
+  true
+}
+
+# Cleanup function for terminal cursor restoration on exit
+# Args: [exit_code] - Exit code to use (default: 0)
+xcleanup() { 
+  local -i exitcode=${1:-0}
+  [[ -t 0 ]] && printf '\e[?25h'
+  exit "$exitcode"
+}
+
+# Trap to ensure cleanup on script termination
+trap 'xcleanup $?' SIGINT EXIT
+
+# Debug utility - pretty-print variable declarations
+# Args: var_names... - Names of variables to display
+decp() { 
+  declare -p "$@" | sed 's/^declare -[a-z-]* //'
+}
+
+# Fallback grep implementation using find + standard grep
+# Used when ripgrep is not available on the system
+# Translates ripgrep options to equivalent grep/find commands
+# Args: pattern directory maxdepth grep_opts...
+# Returns: 0 on matches found, 1 on no matches, 2 on error
 run_grep_fallback() {
   local pattern="$1"
   local directory="$2"
@@ -67,78 +129,204 @@ run_grep_fallback() {
   local -a grep_opts=("$@")
   local -i use_color=0
   local -a files=()
-  local -a find_opts=()
-  local -a find_type_opts=()
-  local exclude_dir
-  local -a exclude_opts=()
   
-  # Process ripgrep options and convert to grep/find options
+  # Determine mode filter based on program invocation name
+  local mode_filter
+  case "$PRG" in
+    phpgrep) mode_filter="php" ;;
+    bashgrep) mode_filter="bash" ;;
+    pygrep) mode_filter="python" ;;
+    *) mode_filter="all" ;;
+  esac
+  
+  # Translate ripgrep options to grep equivalents
+  local -a new_grep_opts=()
   for opt in "${grep_opts[@]}"; do
     case "$opt" in
       --color=auto) use_color=1 ;;
-      --type=sh)    find_type_opts+=(-name "*.bash" -o -name "*.sh") ;;
-      --type=php)   find_type_opts+=(-o -name "*.php" -o -name "*.phtml") ;;
-      --type=py)    find_type_opts+=(-o -name "*.py" -o -name "*.pyw") ;;
-      --smart-case) grep_opts=("-i") ;;
-      --glob)       continue ;; # Skip, handled separately
-      *)            grep_opts+=("$opt") ;;
+      --smart-case) new_grep_opts+=("-i") ;; # Approximate with case insensitive
+      --type=*|--glob|--max-depth) ;; # Skip ripgrep-specific options, handled by find_matching_files
+      !*/**) ;; # Skip ripgrep glob exclusions
+      -*) new_grep_opts+=("$opt") ;; # Pass through other options
     esac
   done
+  grep_opts=("${new_grep_opts[@]}")
   
   # Add color if requested
   ((use_color)) && [[ -t 1 ]] && grep_opts+=("--color=auto")
   
-  # Set up find depth options
-  if ((maxdepth >= 0)); then
-    find_opts+=("-maxdepth" "$maxdepth")
-  fi
-  
-  # Set up exclusion options
-  for exclude_dir in "${EXCLUDE_DIRS[@]}"; do
-    [[ -n "$exclude_dir" ]] && exclude_opts+=(-not -path "*/$exclude_dir/*")
-  done
-  
-  # Remove the first -o if it exists since we start with it
-  if [[ ${#find_type_opts[@]} -gt 0 && "${find_type_opts[0]}" == "-o" ]]; then
-    find_type_opts=("${find_type_opts[@]:1}")
-  fi
-  
   # Debug output
   ((DEBUG)) && {
-    >&2 echo "DEBUG: Fallback mode with find+grep"
-    >&2 echo "DEBUG: find_opts=${find_opts[*]}"
-    >&2 echo "DEBUG: find_type_opts=${find_type_opts[*]}"
-    >&2 echo "DEBUG: exclude_opts=${exclude_opts[*]}"
+    >&2 echo "DEBUG: Fallback mode with advanced file detection"
+    >&2 echo "DEBUG: mode_filter=$mode_filter"
     >&2 echo "DEBUG: grep_opts=${grep_opts[*]}"
   }
   
-  # Find files with matching extensions
+  # Get all matching files using robust file type detection with shebang support
   while IFS= read -r -d '' file; do
     files+=("$file")
-  done < <(find "$directory" "${find_opts[@]}" "${exclude_opts[@]}" \
-            -type f \( "${find_type_opts[@]}" \) -print0 2>/dev/null || true)
+  done < <(find_matching_files "$directory" "$mode_filter" "$maxdepth" "${EXCLUDE_DIRS[@]}" | tr '\n' '\0')
   
   # If no files found, exit early
   if ((${#files[@]} == 0)); then
-    >&2 echo "No files found"
+    >&2 echo "No $MODE files found"
     return 1
   fi
   
-  # Run grep on the files
-  if ! grep "${grep_opts[@]}" "$pattern" "${files[@]}"; then
-    # Only report if grep's exit code was not 0 (no matches) or 1 (normal no matches)
-    if [[ $? -ne 0 && $? -ne 1 ]]; then
-      >&2 echo "Error searching for '$pattern' in $MODE files"
-      return 2
-    else
+  # Execute grep search on collected files
+  if ! grep -H "${grep_opts[@]}" "$pattern" "${files[@]}"; then
+    local grep_exit_code=$?
+    # grep returns 0=found, 1=not found, 2=error
+    if [[ $grep_exit_code -eq 1 ]]; then
       >&2 echo "No $MODE files found with pattern '$pattern'"
       return 1
+    else
+      >&2 echo "Error searching for '$pattern' in $MODE files"
+      return 2
     fi
   fi
   return 0
 }
+
+# Robust file type detection using extension, shebang, and MIME analysis
+# Based on /ai/scripts/lib/files/filetype/filetype
+# Args: filename
+# Returns: bash|py|php|c|text|binary
+detect_filetype() {
+  local filename="$1"
+  local extension="${filename##*.}"
+
+  # Determine filetype from extension
+  if [[ -n $extension ]]; then
+    case "${extension,,}" in
+      bash|sh)  echo bash; return 0 ;;
+      py|pyw)   echo py; return 0 ;;
+      php|phtml|html) echo php; return 0 ;;
+      c)        echo c; return 0 ;;
+      txt|text) echo text; return 0 ;;
+    esac
+  fi
+
+  # If file doesn't exist, assume text
+  [[ -f $filename ]] || { echo 'text'; return 0; }
+
+  # Attempt to determine from shebang
+  local first_line
+  read -r first_line < "$filename" 2>/dev/null || { echo 'text'; return 0; }
+  
+  case "$first_line" in
+    "#!/bin/bash"|"#!/usr/bin/env bash"|"#!/usr/bin/bash"|"#!/bin/sh"|"#!/usr/bin/env sh"|"#!/usr/bin/sh")
+        echo bash; return 0 ;;
+    "#!/usr/bin/python"*|"#!/usr/bin/env python"*)
+        echo py; return 0 ;;
+    "#!/usr/bin/php"|"#!/usr/bin/env php"|"<?php"*|"<?"*)
+        echo php; return 0 ;;
+  esac
+
+  # Use 'file' command for MIME type analysis
+  if command -v file >/dev/null 2>&1; then
+    local file_mime_type
+    file_mime_type=$(file -b --mime-type "$filename" 2>/dev/null)
+    case "$file_mime_type" in
+      text/x-shellscript) echo bash; return 0 ;;
+      text/x-python)      echo py; return 0 ;;
+      text/x-php)         echo php; return 0 ;;
+      text/x-c)           echo c; return 0 ;;
+      text/*)             echo text; return 0 ;;
+    esac
+  fi
+
+  # Default to text
+  echo 'text'
+  return 0
+}
+
+# Find files matching the specified language type
+# Args: directory mode_filter maxdepth exclude_dirs...
+find_matching_files() {
+  local directory="$1"
+  local mode_filter="$2"
+  local maxdepth="$3"
+  shift 3
+  local -a exclude_dirs=("$@")
+  
+  local -a find_opts=()
+  local -a exclude_opts=()
+  
+  # Set up depth options
+  if ((maxdepth >= 0)); then
+    find_opts+=("-maxdepth" "$maxdepth")
+  fi
+  
+  # Set up exclusion options - exclude directories within search path but not parent directories
+  for exclude_dir in "${exclude_dirs[@]}"; do
+    if [[ -n "$exclude_dir" ]]; then
+      # Exclude paths that have the excluded directory within the search directory
+      exclude_opts+=(-not -path "$directory*/$exclude_dir/*")
+    fi
+  done
+  
+  # Find all regular files
+  find "$directory" "${find_opts[@]}" "${exclude_opts[@]}" -type f -print0 2>/dev/null | \
+  while IFS= read -r -d '' file; do
+    # Skip unreadable files
+    [[ -r "$file" ]] || continue
+    
+    # Get file type
+    local file_type
+    file_type=$(detect_filetype "$file")
+    
+    # Check if it matches our mode filter
+    case "$mode_filter" in
+      "bash")
+        [[ "$file_type" == "bash" ]] && echo "$file"
+        ;;
+      "php")
+        [[ "$file_type" == "php" ]] && echo "$file"
+        ;;
+      "python")
+        [[ "$file_type" == "py" ]] && echo "$file"
+        ;;
+      "all")
+        [[ "$file_type" =~ ^(bash|php|py)$ ]] && echo "$file"
+        ;;
+    esac
+  done
+}
+
+# Clean ripgrep options for file-based search (remove file discovery options)
+# Args: rg_opts... - Array of ripgrep options to filter
+# Returns: Cleaned options suitable for searching specific files
+clean_rg_options_for_files() {
+  local -a clean_opts=()
+  local skip_next=0
+  
+  for opt in "$@"; do
+    if ((skip_next)); then
+      skip_next=0
+      continue
+    fi
+    
+    case "$opt" in
+      --type=*|--type-not=*) ;; # Remove type filters (we handle file detection)
+      --glob|--iglob) skip_next=1 ;; # Remove glob options and their arguments
+      --glob=*|--iglob=*) ;; # Remove glob options with embedded arguments
+      --max-depth|--maxdepth) skip_next=1 ;; # Remove depth options and their arguments
+      --max-depth=*|--maxdepth=*) ;; # Remove depth options with embedded arguments
+      *) clean_opts+=("$opt") ;; # Keep all other options
+    esac
+  done
+  
+  # Add options optimized for file-based search
+  clean_opts+=("--no-heading" "--with-filename")
+  
+  printf '%s\n' "${clean_opts[@]}"
+}
+
 # ----------------------------------------------------------------------------------------
 
+# Display help and usage information
+# Args: [exit_code] - Exit code to use (default: 0)
 usage() {
   cat <<EOT
 $PRG $VERSION - Grep $MODE files using ripgrep
@@ -175,21 +363,22 @@ EOT
   exit "${1:-0}"
 }
 
+# Main program entry point
+# Parses command-line arguments and executes the appropriate search strategy
+# Args: Command-line arguments passed to the script
 main() {
   local -i DEBUG=0
   local -a rg_opts=()
+  local -a rg_type_array=()
   local -a args=()
   local -i maxdepth=-1
   local pattern directory
 
-  # Add color if output is to a terminal
-  [[ -t 1 ]] && rg_opts+=("--color=auto")
-  
-  # Add the type filter by default
-  rg_opts+=($RG_TYPE)
-  
-  # Add smart case by default (case insensitive unless pattern contains uppercase)
-  rg_opts+=("--smart-case")
+  # Configure default ripgrep options for optimal user experience
+  [[ -t 1 ]] && rg_opts+=("--color=auto")  # Enable colors for terminal output
+  read -r -a rg_type_array <<< "$RG_TYPE"  # Split RG_TYPE safely into array
+  rg_opts+=("${rg_type_array[@]}")         # Add language-specific file type filters
+  rg_opts+=("--smart-case")                # Case insensitive unless pattern has uppercase
   
   (($#)) || usage 1
 
@@ -229,12 +418,12 @@ main() {
   directory="${args[1]:-$PWD}"
   [[ ! -d "$directory" ]] && die 1 "Directory '$directory' does not exist."
 
-  # Add maxdepth if specified
+  # Apply search depth limitation if specified
   if ((maxdepth >= 0)); then
     rg_opts+=("--max-depth" "$maxdepth")
   fi
 
-  # Add exclude directories
+  # Convert excluded directories to ripgrep glob patterns
   for exclude_dir in "${EXCLUDE_DIRS[@]}"; do
     [[ -n "$exclude_dir" ]] && rg_opts+=("--glob" "!$exclude_dir/**")
   done
@@ -249,19 +438,65 @@ main() {
     >&2 echo "DEBUG: ripgrep options: ${rg_opts[*]}"
   }
 
-  # Run ripgrep with our options (or fallback to grep with find)
+  # Execute search using the optimal available method
   if [[ "$RG_CMD" == "grep_fallback" ]]; then
-    # Fallback to the original find + grep method
+    # Use fallback implementation with advanced file detection when ripgrep is unavailable
     run_grep_fallback "$pattern" "$directory" "$maxdepth" "${rg_opts[@]}"
   else
-    # Use ripgrep directly
-    if ! "$RG_CMD" "${rg_opts[@]}" "$pattern" "$directory"; then
-      # Check if it's a normal "no matches" exit code (1)
-      if [[ $? -eq 1 ]]; then
-        >&2 echo "No $MODE files found with pattern '$pattern'"
-      else
-        >&2 echo "Error searching for '$pattern' in $MODE files"
+    # Use hybrid approach: comprehensive file detection + ripgrep search performance
+    local mode_filter
+    case "$PRG" in
+      phpgrep) mode_filter="php" ;;
+      bashgrep) mode_filter="bash" ;;
+      pygrep) mode_filter="python" ;;
+      *) mode_filter="all" ;;
+    esac
+    
+    # Phase 1: Find all matching files using comprehensive detection (extension + shebang)
+    local -a matching_files=()
+    while IFS= read -r -d '' file; do
+      matching_files+=("$file")
+    done < <(find_matching_files "$directory" "$mode_filter" "$maxdepth" "${EXCLUDE_DIRS[@]}" | tr '\n' '\0')
+    
+    # If no files found, exit early with appropriate message
+    if [[ ${#matching_files[@]} -eq 0 ]]; then
+      >&2 echo "No $MODE files found with pattern '$pattern'"
+      exit 1
+    fi
+    
+    # Phase 2: Clean ripgrep options for file-based search
+    local -a clean_rg_opts=()
+    while IFS= read -r opt; do
+      [[ -n "$opt" ]] && clean_rg_opts+=("$opt")
+    done < <(clean_rg_options_for_files "${rg_opts[@]}")
+    
+    # Phase 3: Use ripgrep to search within the filtered files for maximum performance
+    ((DEBUG)) && {
+      >&2 echo "DEBUG: Hybrid mode - found ${#matching_files[@]} matching files"
+      >&2 echo "DEBUG: clean_rg_opts=${clean_rg_opts[*]}"
+    }
+    
+    # Handle large file lists by chunking if necessary (avoid argument length limits)
+    local -i chunk_size=100
+    local -i start=0
+    local -i found_matches=0
+    
+    while ((start < ${#matching_files[@]})); do
+      local -a chunk=("${matching_files[@]:$start:$chunk_size}")
+      
+      if "$RG_CMD" "${clean_rg_opts[@]}" "$pattern" "${chunk[@]}" 2>/dev/null; then
+        found_matches=1
       fi
+      
+      ((start += chunk_size))
+    done
+    
+    # Exit with appropriate code based on whether matches were found
+    if ((found_matches)); then
+      exit 0
+    else
+      >&2 echo "No $MODE files found with pattern '$pattern'"
+      exit 1
     fi
   fi
 }

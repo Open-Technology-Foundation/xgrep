@@ -1,0 +1,5 @@
+#!/bin/bash
+# Bash script without extension, identified by shebang
+
+echo "test without extension"
+pattern_to_find="shebang_test"
