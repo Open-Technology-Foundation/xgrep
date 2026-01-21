@@ -1,1 +1,0 @@
-/usr/local/share/yatti/bash-coding-standard/data/BASH-CODING-STANDARD.complete.md
