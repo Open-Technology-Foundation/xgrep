@@ -1,0 +1,253 @@
+.\" xgrep.1 - manpage for xgrep language-specific grep tools
+.\" Copyright (c) 2025 Open Technology Foundation
+.\" Licensed under GPL-3.0
+.\"
+.TH XGREP 1 "January 2025" "xgrep 1.3.0" "User Commands"
+.SH NAME
+xgrep, bashgrep, phpgrep, pygrep \- language-specific grep tools with shebang detection
+.SH SYNOPSIS
+.B bashgrep
+.RI [ OPTIONS ]
+.I PATTERN
+.RI [ DIRECTORY ]
+.br
+.B phpgrep
+.RI [ OPTIONS ]
+.I PATTERN
+.RI [ DIRECTORY ]
+.br
+.B pygrep
+.RI [ OPTIONS ]
+.I PATTERN
+.RI [ DIRECTORY ]
+.br
+.B xgrep
+.RI [ OPTIONS ]
+.I PATTERN
+.RI [ DIRECTORY ]
+.SH DESCRIPTION
+.B xgrep
+is a collection of language-specific grep tools that search within files
+by extension and shebang detection. It uses ripgrep for high-performance
+searching when available, with graceful fallback to standard grep.
+.PP
+The tools are typically invoked via language-specific symlinks:
+.TP
+.B bashgrep
+Search only Bash scripts (.sh, .bash, or files with bash/sh shebangs)
+.TP
+.B phpgrep
+Search only PHP files (.php, .phtml, or files with php shebangs/<?php tags)
+.TP
+.B pygrep
+Search only Python files (.py, .pyw, or files with python shebangs)
+.TP
+.B xgrep
+Search all supported languages (Bash, PHP, and Python)
+.PP
+File detection uses multiple methods in order:
+.IP 1. 4
+.B Extension
+\- .sh, .bash, .py, .pyw, .php, .phtml
+.IP 2. 4
+.B Shebang
+\- #!/bin/bash, #!/usr/bin/env python3, #!/usr/local/bin/php, etc.
+.IP 3. 4
+.B MIME type
+\- text/x-shellscript, text/x-python, text/x-php
+.IP 4. 4
+.B Content
+\- <?php tags for PHP files
+.PP
+Recognized script extensions (.sh, .py, .php) are identified by extension only.
+Non-script extensions (.txt, no extension) fall through to shebang detection,
+allowing scripts without standard extensions to be found.
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-maxdepth " " \fIN\fR
+Limit search depth to
+.I N
+directory levels. Default is unlimited.
+.TP
+.BR \-X ", " \-\-exclude\-dir " " \fIDIR\fR[,...]
+Exclude directory from search. May be specified multiple times.
+Accepts comma-separated list:
+.BR "\-X .git,.venv" .
+Use
+.B \-X ''
+to reset all exclusions.
+.IP
+Default exclusions: .venv .gudang gudang .git bak ~ temp tmp .tmp .temp .Trash-0
+.TP
+.BR \-\- ", " \-\-rg " " \fI...\fR
+Pass all following options directly to ripgrep.
+.TP
+.BR \-D ", " \-\-debug
+Enable debug output showing file detection and search details.
+.TP
+.BR \-V ", " \-\-version
+Display version number.
+.TP
+.B \-\-help
+Display help message.
+.SH RIPGREP OPTIONS
+When ripgrep is available, common options include:
+.TP
+.BR \-i ", " \-\-ignore\-case
+Case-insensitive search.
+.TP
+.BR \-l ", " \-\-files\-with\-matches
+List only filenames containing matches.
+.TP
+.BR \-c ", " \-\-count
+Show count of matches per file.
+.TP
+.BR \-A " " \fINUM\fR
+Show NUM lines after each match.
+.TP
+.BR \-B " " \fINUM\fR
+Show NUM lines before each match.
+.TP
+.BR \-C " " \fINUM\fR
+Show NUM lines before and after each match.
+.TP
+.B \-\-no\-heading
+Don't group matches by filename.
+.PP
+See
+.BR rg (1)
+for all available options.
+.SH ENVIRONMENT
+.TP
+.B XGREP_EXCLUDE_DIRS
+Space-separated list of directories to exclude from search.
+Overrides built-in defaults.
+.IP
+Example: export XGREP_EXCLUDE_DIRS=".git .venv build node_modules"
+.TP
+.B RG_CMD
+Force specific search mode. Used primarily for testing.
+Values: rg, ripgrep, grep_fallback
+.SH EXIT STATUS
+.TP
+.B 0
+Matches found successfully.
+.TP
+.B 1
+No matches found, or no matching files in directory.
+.TP
+.B 2
+Error occurred (invalid pattern, permission denied, etc.).
+.TP
+.B 22
+Invalid argument (option requires a value).
+.SH EXAMPLES
+Search for function definitions in Bash scripts:
+.PP
+.RS
+.nf
+bashgrep "function.*main" /usr/local/bin
+bashgrep "^[a-z_]+\\(\\)" ~/scripts
+.fi
+.RE
+.PP
+Search for class definitions in PHP:
+.PP
+.RS
+.nf
+phpgrep "class.*Controller" app/
+phpgrep "extends.*Model" src/
+.fi
+.RE
+.PP
+Search for test functions in Python:
+.PP
+.RS
+.nf
+pygrep "def test_" tests/
+pygrep "import pytest" .
+.fi
+.RE
+.PP
+Case-insensitive search with context:
+.PP
+.RS
+.nf
+bashgrep -i -C 3 "error" /var/log/scripts
+.fi
+.RE
+.PP
+List only filenames containing matches:
+.PP
+.RS
+.nf
+phpgrep -l "deprecated" src/
+.fi
+.RE
+.PP
+Limit search depth and exclude directories:
+.PP
+.RS
+.nf
+pygrep -d 2 -X __pycache__,build "TODO" .
+.fi
+.RE
+.PP
+Count matches per file:
+.PP
+.RS
+.nf
+bashgrep -c "echo" ~/bin
+.fi
+.RE
+.PP
+Search all supported languages:
+.PP
+.RS
+.nf
+xgrep "config" /etc
+.fi
+.RE
+.PP
+Pass options directly to ripgrep:
+.PP
+.RS
+.nf
+bashgrep -- --max-count=1 --no-heading "main"
+.fi
+.RE
+.SH NOTES
+Smart-case is enabled by default: searches are case-insensitive unless the
+pattern contains uppercase characters.
+.PP
+When ripgrep is available, .gitignore rules are respected. Use
+.B \-\-no\-ignore
+to override this behavior.
+.PP
+Binary files are automatically excluded from search results.
+.PP
+The tools use a hybrid approach: comprehensive file detection (extension +
+shebang + MIME) combined with ripgrep's fast searching capabilities.
+.SH FILES
+.TP
+.I /etc/bash_completion.d/xgrep.bash_completion
+Bash completion script for all xgrep commands.
+.SH SEE ALSO
+.BR rg (1),
+.BR grep (1),
+.BR find (1),
+.BR file (1)
+.PP
+Project homepage:
+.I https://github.com/Open-Technology-Foundation/xgrep
+.SH BUGS
+Report bugs at:
+.I https://github.com/Open-Technology-Foundation/xgrep/issues
+.SH AUTHOR
+Open Technology Foundation
+.SH COPYRIGHT
+Copyright \(co 2025 Open Technology Foundation.
+License GPLv3+: GNU GPL version 3 or later.
+.PP
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.

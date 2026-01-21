@@ -10,7 +10,7 @@ _xgrep_completion() {
 
     # Main options for all xgrep tools
     opts="-d --maxdepth -X --exclude-dir -D --debug -V --version --help -- --rg"
-    
+
     # Ripgrep options (subset of most commonly used)
     rg_opts="-i --ignore-case -v --invert-match -w --word-regexp -x --line-regexp
              -c --count -l --files-with-matches -L --files-without-match
@@ -95,7 +95,7 @@ _xgrep_completion() {
                 ((non_option_count++))
             fi
         done
-        
+
         if [[ $non_option_count -eq 0 ]]; then
             # First argument is pattern - no completion
             COMPREPLY=()
