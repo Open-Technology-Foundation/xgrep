@@ -1,7 +1,9 @@
 # Makefile for xgrep project
 # Provides convenient targets for testing, linting, and development
 
-.PHONY: help test test-unit test-integration test-verbose clean lint install uninstall
+.PHONY: help test test-unit test-integration test-verbose \
+        clean lint install uninstall install-user uninstall-user \
+        check-deps test-summary
 
 # Default target
 help:
@@ -13,11 +15,18 @@ help:
 	@echo "  test-unit         Run only unit tests"
 	@echo "  test-integration  Run only integration tests"
 	@echo "  test-verbose      Run all tests with verbose output"
-	@echo "  test-parallel     Run tests in parallel"
 	@echo "  lint              Run shellcheck on main script"
 	@echo "  clean             Clean up test artifacts"
-	@echo "  install           Install xgrep and symlinks"
-	@echo "  uninstall         Remove installed xgrep and symlinks"
+	@echo "  check-deps        Check development dependencies"
+	@echo "  test-summary      Show test coverage summary"
+	@echo ""
+	@echo "Installation (requires sudo):"
+	@echo "  install           Install to /usr/local/bin"
+	@echo "  uninstall         Remove from /usr/local/bin"
+	@echo ""
+	@echo "User Installation (no sudo required):"
+	@echo "  install-user      Install to ~/.local/bin"
+	@echo "  uninstall-user    Remove from ~/.local/bin"
 	@echo ""
 	@echo "Requirements:"
 	@echo "  - bats (for testing)"
@@ -41,10 +50,6 @@ test-verbose:
 	@echo "Running all tests with verbose output..."
 	./tests/run_tests.sh --verbose
 
-test-parallel:
-	@echo "Running tests in parallel..."
-	./tests/run_tests.sh
-
 # Development targets
 lint:
 	@echo "Running shellcheck on xgrep script..."
@@ -59,9 +64,9 @@ clean:
 	rm -rf testbuild test_manual
 	@echo "Clean complete!"
 
-# Installation targets
+# System-wide installation (requires sudo)
 install:
-	@echo "Installing xgrep..."
+	@echo "Installing xgrep to /usr/local/bin (requires sudo)..."
 	sudo ln -sf "$(PWD)/xgrep" /usr/local/bin/xgrep
 	sudo ln -sf "$(PWD)/xgrep" /usr/local/bin/bashgrep
 	sudo ln -sf "$(PWD)/xgrep" /usr/local/bin/phpgrep
@@ -70,11 +75,30 @@ install:
 	@echo "Commands available: xgrep, bashgrep, phpgrep, pygrep"
 
 uninstall:
-	@echo "Removing xgrep installation..."
+	@echo "Removing xgrep from /usr/local/bin (requires sudo)..."
 	sudo rm -f /usr/local/bin/xgrep
 	sudo rm -f /usr/local/bin/bashgrep
 	sudo rm -f /usr/local/bin/phpgrep
 	sudo rm -f /usr/local/bin/pygrep
+	@echo "Uninstall complete!"
+
+# User-local installation (no sudo required)
+install-user:
+	@echo "Installing xgrep to ~/.local/bin..."
+	@mkdir -p ~/.local/bin
+	ln -sf "$(PWD)/xgrep" ~/.local/bin/xgrep
+	ln -sf "$(PWD)/xgrep" ~/.local/bin/bashgrep
+	ln -sf "$(PWD)/xgrep" ~/.local/bin/phpgrep
+	ln -sf "$(PWD)/xgrep" ~/.local/bin/pygrep
+	@echo "Installation complete!"
+	@echo "Ensure ~/.local/bin is in your PATH"
+
+uninstall-user:
+	@echo "Removing xgrep from ~/.local/bin..."
+	rm -f ~/.local/bin/xgrep
+	rm -f ~/.local/bin/bashgrep
+	rm -f ~/.local/bin/phpgrep
+	rm -f ~/.local/bin/pygrep
 	@echo "Uninstall complete!"
 
 # Development dependencies check
