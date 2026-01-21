@@ -106,9 +106,9 @@ create_integration_test_files() {
 }
 
 @test "xgrep handles no matches gracefully" {
-    run_as_program "xgrep" "nonexistent_pattern" "$TEST_TEMP_DIR/project"
+    run_as_program "xgrep" "nonexistent_pattern_xyz_12345" "$TEST_TEMP_DIR/project"
     [[ $status -eq 1 ]]
-    [[ "$output" =~ "No.*files found with pattern" ]]
+    [[ "$output" =~ No.*files\ found\ with\ pattern ]]
 }
 
 @test "xgrep handles empty directory" {
@@ -134,10 +134,10 @@ create_integration_test_files() {
 @test "xgrep debug mode shows configuration" {
     run_as_program "xgrep" "-D" "search_target" "$TEST_TEMP_DIR/project"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "DEBUG: RG_CMD=" ]]
-    [[ "$output" =~ "DEBUG: RG_TYPE=" ]]
-    [[ "$output" =~ "DEBUG: pattern=" ]]
-    [[ "$output" =~ "DEBUG: directory=" ]]
+    [[ "$output" =~ DEBUG:\ RG_CMD= ]]
+    [[ "$output" =~ RG_TYPE= ]]
+    [[ "$output" =~ pattern= ]]
+    [[ "$output" =~ directory= ]]
 }
 
 # Test environment variables

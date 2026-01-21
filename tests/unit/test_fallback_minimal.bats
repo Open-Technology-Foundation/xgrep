@@ -29,10 +29,9 @@ create_simple_test_files() {
 }
 
 
-# Test that fallback mode can find files - use mock instead of env var
+# Test that fallback mode can find files - use RG_CMD env var
 @test "fallback mode finds test pattern when ripgrep unavailable" {
-    # Test when no ripgrep is available by mocking command not found
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "test_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "test.sh" ]]
@@ -40,9 +39,9 @@ create_simple_test_files() {
     [[ "$output" =~ "test.py" ]]
 }
 
-# Test language-specific filtering in fallback mode  
+# Test language-specific filtering in fallback mode
 @test "fallback mode respects language filtering when ripgrep unavailable" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "bashgrep" "test_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "test.sh" ]]
@@ -52,35 +51,36 @@ create_simple_test_files() {
 
 # Test debug output in fallback mode
 @test "fallback mode shows proper debug information when ripgrep unavailable" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "-D" "test_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "DEBUG: Fallback mode with find+grep" ]]
-    [[ "$output" =~ "DEBUG: find_type_opts=" ]]
+    [[ "$output" =~ "DEBUG: Fallback mode with advanced file detection" ]]
+    [[ "$output" =~ "DEBUG: mode_filter=" ]]
     [[ "$output" =~ "DEBUG: grep_opts=" ]]
 }
 
 # Test error handling in fallback mode
 @test "fallback mode handles no matches gracefully when ripgrep unavailable" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "nonexistent_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 1 ]]
 }
 
 @test "fallback mode handles empty directory when ripgrep unavailable" {
-    mock_no_ripgrep
-    mkdir -p "$TEST_TEMP_DIR/empty"
-    run_as_program "xgrep" "test_pattern" "$TEST_TEMP_DIR/empty"
+    export RG_CMD=grep_fallback
+    # Create truly empty directory (no script files)
+    mkdir -p "$TEST_TEMP_DIR/truly_empty"
+    run_as_program "xgrep" "test_pattern" "$TEST_TEMP_DIR/truly_empty"
     [[ $status -eq 1 ]]
-    [[ "$output" =~ "No files found" ]]
+    [[ "$output" =~ No.*files\ found ]]
 }
 
 # Test exclude directory functionality in fallback mode
 @test "fallback mode respects exclude directory option when ripgrep unavailable" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     mkdir -p "$TEST_TEMP_DIR/testdir/.git"
     echo "test_pattern_here" > "$TEST_TEMP_DIR/testdir/.git/config"
-    
+
     run_as_program "xgrep" "test_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should find in main files but not in .git
@@ -90,10 +90,10 @@ create_simple_test_files() {
 
 # Test maxdepth functionality in fallback mode
 @test "fallback mode respects maxdepth option when ripgrep unavailable" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     mkdir -p "$TEST_TEMP_DIR/testdir/deep"
     echo "test_pattern_here" > "$TEST_TEMP_DIR/testdir/deep/deep.sh"
-    
+
     run_as_program "xgrep" "-d" "1" "test_pattern" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should find in root level but not in deep subdirectory

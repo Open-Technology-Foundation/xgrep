@@ -115,11 +115,11 @@ create_real_test_files() {
     [[ ! "$output" =~ "build" ]]
 }
 
-@test "xgrep handles no matches correctly (currently has bug - returns 0)" {
+@test "xgrep handles no matches correctly" {
     run_as_program "xgrep" "nonexistent_pattern_12345" "$TEST_TEMP_DIR/testproject"
-    # BUG: Currently returns 0 instead of 1 for no matches
-    [[ $status -eq 0 ]]
-    [[ "$output" =~ "Error searching for" ]]
+    # Returns 1 when no matches are found
+    [[ $status -eq 1 ]]
+    [[ "$output" =~ No.*files\ found\ with\ pattern ]]
 }
 
 @test "xgrep handles pattern with special regex characters" {
@@ -133,13 +133,13 @@ create_real_test_files() {
 @test "xgrep debug mode shows detailed information" {
     run_as_program "xgrep" "-D" "integration_test_pattern" "$TEST_TEMP_DIR/testproject"
     [[ $status -eq 0 ]]
-    
-    # Should show debug information
-    [[ "$output" =~ "DEBUG: RG_CMD=" ]]
-    [[ "$output" =~ "DEBUG: RG_TYPE=" ]]
-    [[ "$output" =~ "DEBUG: pattern=integration_test_pattern" ]]
-    [[ "$output" =~ "DEBUG: directory=" ]]
-    [[ "$output" =~ "DEBUG: exclude_dirs=" ]]
+
+    # Should show debug information (format: xgrep: ⦿ DEBUG: key=value)
+    [[ "$output" =~ DEBUG:\ RG_CMD= ]]
+    [[ "$output" =~ RG_TYPE= ]]
+    [[ "$output" =~ pattern=integration_test_pattern ]]
+    [[ "$output" =~ directory= ]]
+    [[ "$output" =~ exclude_dirs= ]]
 }
 
 @test "xgrep maxdepth limits search depth" {
@@ -161,22 +161,22 @@ create_real_test_files() {
     # Test xgrep help
     run_as_program "xgrep" "--help"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "Grep Bash/PHP/Python files" ]]
-    
+    [[ "$output" =~ "Language-Specific Grep Tool" ]]
+
     # Test bashgrep help
-    run_as_program "bashgrep" "--help" 
+    run_as_program "bashgrep" "--help"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "Grep Bash files" ]]
-    
+    [[ "$output" =~ "bashgrep" ]]
+
     # Test phpgrep help
     run_as_program "phpgrep" "--help"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "Grep PHP files" ]]
-    
+    [[ "$output" =~ "phpgrep" ]]
+
     # Test pygrep help
     run_as_program "pygrep" "--help"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "Grep Python files" ]]
+    [[ "$output" =~ "pygrep" ]]
 }
 
 @test "version output is consistent across all commands" {

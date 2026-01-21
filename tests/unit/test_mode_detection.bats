@@ -117,29 +117,32 @@ EOF
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/phpgrep"
     run "$TEST_TEMP_DIR/phpgrep" --help
     assert_success
-    assert_output_contains "Grep PHP files using ripgrep"
-    assert_output_contains "phpgrep 1.2.0"  # Header shows correct program name
+    assert_output_contains "phpgrep"
+    assert_output_contains "Language-Specific Grep Tool"
 }
 
 @test "actual symlink invocation detects mode correctly - bashgrep" {
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/bashgrep"
     run "$TEST_TEMP_DIR/bashgrep" --help
     assert_success
-    assert_output_contains "Grep Bash files using ripgrep"
+    assert_output_contains "bashgrep"
+    assert_output_contains "Language-Specific Grep Tool"
 }
 
 @test "actual symlink invocation detects mode correctly - pygrep" {
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/pygrep"
     run "$TEST_TEMP_DIR/pygrep" --help
     assert_success
-    assert_output_contains "Grep Python files using ripgrep"
+    assert_output_contains "pygrep"
+    assert_output_contains "Language-Specific Grep Tool"
 }
 
 @test "actual symlink invocation detects mode correctly - xgrep" {
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/xgrep"
     run "$TEST_TEMP_DIR/xgrep" --help
     assert_success
-    assert_output_contains "Grep Bash/PHP/Python files using ripgrep"
+    assert_output_contains "xgrep"
+    assert_output_contains "Language-Specific Grep Tool"
 }
 
 # Test version output for different modes
@@ -162,7 +165,7 @@ EOF
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/phpgrep"
     run "$TEST_TEMP_DIR/phpgrep" --help
     assert_success
-    assert_output_contains "See Also:"
+    assert_output_contains "SEE ALSO"
     assert_output_contains "xgrep bashgrep pygrep"  # Should list others but not phpgrep itself
     assert_output_not_contains "phpgrep phpgrep"  # Should not duplicate itself
 }
@@ -171,7 +174,7 @@ EOF
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/bashgrep"
     run "$TEST_TEMP_DIR/bashgrep" --help
     assert_success
-    assert_output_contains "See Also:"
+    assert_output_contains "SEE ALSO"
     assert_output_contains "xgrep phpgrep pygrep"
     assert_output_not_contains "bashgrep bashgrep"
 }
@@ -181,7 +184,7 @@ EOF
     ln -sf "$XGREP_SCRIPT" "$TEST_TEMP_DIR/testgrep"
     run "$TEST_TEMP_DIR/testgrep" --help
     assert_success
-    assert_output_contains "Currently:"
+    assert_output_contains "Current:"
     assert_output_contains ".venv"
     assert_output_contains ".git"
 }

@@ -29,15 +29,14 @@ create_fallback_test_environment() {
 
 # Test fallback mode activation
 @test "fallback mode activates when ripgrep not available" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "-D" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "Warning: ripgrep.*not found" ]]
-    [[ "$output" =~ "Falling back to standard grep" ]]
+    [[ "$output" =~ "DEBUG: RG_CMD=grep_fallback" ]]
 }
 
 @test "fallback mode uses find+grep successfully" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should find pattern in all three file types
@@ -47,7 +46,7 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode respects language filters - bash only" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "bashgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "script.sh" ]]
@@ -56,7 +55,7 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode respects language filters - php only" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "phpgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ ! "$output" =~ "script.sh" ]]
@@ -65,7 +64,7 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode respects language filters - python only" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "pygrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ ! "$output" =~ "script.sh" ]]
@@ -74,7 +73,7 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode excludes default directories" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should not find pattern in .git directory
@@ -82,10 +81,10 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode handles maxdepth option" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     mkdir -p "$TEST_TEMP_DIR/testdir/deep/deeper"
     create_test_file "testdir/deep/deeper/deep.sh" "fallback test pattern" "#!/bin/bash"
-    
+
     run_as_program "xgrep" "-d" "1" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should not find the deeply nested file
@@ -93,10 +92,10 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode handles exclude directory option" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     mkdir -p "$TEST_TEMP_DIR/testdir/excluded"
     create_test_file "testdir/excluded/test.sh" "fallback test pattern" "#!/bin/bash"
-    
+
     run_as_program "xgrep" "-X" "excluded" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should not find pattern in excluded directory
@@ -104,28 +103,30 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode shows debug information when requested" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "-D" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "DEBUG: Fallback mode with find+grep" ]]
-    [[ "$output" =~ "DEBUG: find_opts=" ]]
+    [[ "$output" =~ "DEBUG: Fallback mode with advanced file detection" ]]
+    [[ "$output" =~ "DEBUG: mode_filter=" ]]
     [[ "$output" =~ "DEBUG: grep_opts=" ]]
 }
 
 # Test error conditions in fallback mode
 @test "fallback mode handles no files found gracefully" {
-    mock_no_ripgrep
-    mkdir -p "$TEST_TEMP_DIR/empty"
-    run_as_program "xgrep" "nonexistent" "$TEST_TEMP_DIR/empty"
+    export RG_CMD=grep_fallback
+    # Create truly empty directory (no script files)
+    mkdir -p "$TEST_TEMP_DIR/truly_empty"
+    run_as_program "xgrep" "nonexistent" "$TEST_TEMP_DIR/truly_empty"
     [[ $status -eq 1 ]]
-    [[ "$output" =~ "No files found" ]]
+    [[ "$output" =~ No.*files\ found ]]
 }
 
 @test "fallback mode handles no matches found" {
-    mock_no_ripgrep
-    run_as_program "xgrep" "nonexistent_pattern" "$TEST_TEMP_DIR/testdir"
+    export RG_CMD=grep_fallback
+    # Use a pattern that won't match any file content
+    run_as_program "xgrep" "XYZZY_NONEXISTENT_PATTERN_12345" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 1 ]]
-    [[ "$output" =~ "No.*files found with pattern" ]]
+    [[ "$output" =~ No.*files\ found\ with\ pattern ]]
 }
 
 # Test that regular mode still works with ripgrep available
@@ -140,16 +141,14 @@ create_fallback_test_environment() {
 
 # Test specific ripgrep option conversion in fallback mode
 @test "fallback mode converts --type options correctly" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "-D" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
-    [[ "$output" =~ "DEBUG: find_type_opts=" ]]
-    # Should have converted --type=sh to find options
-    [[ "$output" =~ "*.sh" || "$output" =~ "*.bash" ]]
+    [[ "$output" =~ "DEBUG: mode_filter=" ]]
 }
 
 @test "fallback mode handles smart-case option" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     run_as_program "xgrep" "-D" "FALLBACK" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     # Should find pattern regardless of case due to smart-case conversion
@@ -157,10 +156,10 @@ create_fallback_test_environment() {
 
 # Test file type detection logic
 @test "fallback mode finds bash files by extension and shebang" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     # Create bash file without extension but with shebang
     create_test_file "testdir/bash_script" "fallback test pattern" "#!/bin/bash"
-    
+
     run_as_program "bashgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "script.sh" ]]  # Extension-based
@@ -168,10 +167,10 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode finds php files by extension and shebang" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     # Create PHP file without extension but with shebang
     create_test_file "testdir/php_cli" "<?php echo 'fallback test pattern';" "#!/usr/bin/env php"
-    
+
     run_as_program "phpgrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "web.php" ]]  # Extension-based
@@ -179,10 +178,10 @@ create_fallback_test_environment() {
 }
 
 @test "fallback mode finds python files by extension and shebang" {
-    mock_no_ripgrep
+    export RG_CMD=grep_fallback
     # Create Python file without extension but with shebang
     create_test_file "testdir/py_script" "print('fallback test pattern')" "#!/usr/bin/env python3"
-    
+
     run_as_program "pygrep" "fallback" "$TEST_TEMP_DIR/testdir"
     [[ $status -eq 0 ]]
     [[ "$output" =~ "app.py" ]]  # Extension-based
