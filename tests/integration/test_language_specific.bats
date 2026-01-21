@@ -8,6 +8,7 @@ load ../helpers/mock_commands
 setup() {
     setup_test_env
     create_language_test_files
+    create_edge_case_files
 }
 
 teardown() {
@@ -47,6 +48,33 @@ create_language_test_files() {
     chmod +x "$TEST_TEMP_DIR/multiproject/bashfile_no_ext"
     chmod +x "$TEST_TEMP_DIR/multiproject/phpfile_no_ext"
     chmod +x "$TEST_TEMP_DIR/multiproject/pyfile_no_ext"
+}
+
+create_edge_case_files() {
+    mkdir -p "$TEST_TEMP_DIR/edgecases"
+
+    # Extension vs shebang conflicts
+    printf '#!/bin/bash\necho "EDGE_BASH_TXT"\n' > "$TEST_TEMP_DIR/edgecases/wrong_ext.txt"
+    printf '#!/usr/bin/env python3\nprint("EDGE_PY_SH")\n' > "$TEST_TEMP_DIR/edgecases/python_in.sh"
+    printf '#!/usr/bin/env php\n<?php echo "EDGE_PHP_PY"; ?>\n' > "$TEST_TEMP_DIR/edgecases/php_in.py"
+
+    # Extension-only files (no shebang)
+    printf 'echo "EDGE_BASH_NOSHEBANG"\n' > "$TEST_TEMP_DIR/edgecases/no_shebang.sh"
+    printf 'print("EDGE_PY_NOSHEBANG")\n' > "$TEST_TEMP_DIR/edgecases/no_shebang.py"
+    printf '<?php echo "EDGE_PHP_NOSHEBANG"; ?>\n' > "$TEST_TEMP_DIR/edgecases/no_shebang.php"
+
+    # Alternative shebang paths
+    printf '#!/usr/bin/python3\nprint("EDGE_USRBIN_PY")\n' > "$TEST_TEMP_DIR/edgecases/usrbin_python"
+    printf '#!/usr/local/bin/python3\nprint("EDGE_LOCAL_PY")\n' > "$TEST_TEMP_DIR/edgecases/local_python"
+    printf '#!/usr/bin/bash\necho "EDGE_USRBIN_BASH"\n' > "$TEST_TEMP_DIR/edgecases/usrbin_bash"
+
+    # Multi-dot filenames
+    printf '#!/bin/bash\necho "EDGE_MULTIDOT"\n' > "$TEST_TEMP_DIR/edgecases/script.test.sh"
+
+    # Control file (should NEVER match any language tool)
+    printf 'EDGE_CONTROL_TEXT plain text\n' > "$TEST_TEMP_DIR/edgecases/readme.txt"
+
+    chmod +x "$TEST_TEMP_DIR/edgecases"/*
 }
 
 # Test bashgrep language-specific functionality
@@ -204,9 +232,114 @@ create_language_test_files() {
     
     run_as_program "xgrep" "universal_pattern" "$TEST_TEMP_DIR/multiproject"
     [[ $status -eq 0 ]]
-    
+
     # Should find in all language types
     [[ "$output" =~ "script.sh" ]]
     [[ "$output" =~ "index.php" ]]
     [[ "$output" =~ "app.py" ]]
+}
+
+# ============================================
+# Edge Case Tests - Extension vs Shebang
+# ============================================
+
+@test "edge: bashgrep finds .txt file with bash shebang" {
+    run_as_program "bashgrep" "EDGE_BASH_TXT" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "wrong_ext.txt" ]]
+}
+
+@test "edge: bashgrep finds .sh file regardless of python shebang" {
+    run_as_program "bashgrep" "EDGE_PY_SH" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "python_in.sh" ]]
+}
+
+@test "edge: pygrep ignores .sh file even with python shebang" {
+    run_as_program "pygrep" "EDGE_PY_SH" "$TEST_TEMP_DIR/edgecases"
+    [[ ! "$output" =~ "python_in.sh" ]]
+}
+
+@test "edge: pygrep finds .py file regardless of php shebang" {
+    run_as_program "pygrep" "EDGE_PHP_PY" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "php_in.py" ]]
+}
+
+@test "edge: phpgrep ignores .py file even with php shebang" {
+    run_as_program "phpgrep" "EDGE_PHP_PY" "$TEST_TEMP_DIR/edgecases"
+    [[ ! "$output" =~ "php_in.py" ]]
+}
+
+# ============================================
+# Edge Case Tests - Extension Only (No Shebang)
+# ============================================
+
+@test "edge: bashgrep finds .sh file without shebang" {
+    run_as_program "bashgrep" "EDGE_BASH_NOSHEBANG" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "no_shebang.sh" ]]
+}
+
+@test "edge: pygrep finds .py file without shebang" {
+    run_as_program "pygrep" "EDGE_PY_NOSHEBANG" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "no_shebang.py" ]]
+}
+
+@test "edge: phpgrep finds .php file without shebang" {
+    run_as_program "phpgrep" "EDGE_PHP_NOSHEBANG" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "no_shebang.php" ]]
+}
+
+# ============================================
+# Edge Case Tests - Alternative Shebang Paths
+# ============================================
+
+@test "edge: pygrep finds file with /usr/bin/python3 shebang" {
+    run_as_program "pygrep" "EDGE_USRBIN_PY" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "usrbin_python" ]]
+}
+
+@test "edge: pygrep finds file with /usr/local/bin/python3 shebang" {
+    run_as_program "pygrep" "EDGE_LOCAL_PY" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "local_python" ]]
+}
+
+@test "edge: bashgrep finds file with /usr/bin/bash shebang" {
+    run_as_program "bashgrep" "EDGE_USRBIN_BASH" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "usrbin_bash" ]]
+}
+
+# ============================================
+# Edge Case Tests - Multi-dot Filenames
+# ============================================
+
+@test "edge: bashgrep finds multi.dot.script.sh" {
+    run_as_program "bashgrep" "EDGE_MULTIDOT" "$TEST_TEMP_DIR/edgecases"
+    [[ $status -eq 0 ]]
+    [[ "$output" =~ "script.test.sh" ]]
+}
+
+# ============================================
+# Edge Case Tests - Control (Plain Text)
+# ============================================
+
+@test "edge: bashgrep ignores plain .txt file without shebang" {
+    run_as_program "bashgrep" "EDGE_CONTROL_TEXT" "$TEST_TEMP_DIR/edgecases"
+    [[ ! "$output" =~ "readme.txt" ]]
+}
+
+@test "edge: phpgrep ignores plain .txt file" {
+    run_as_program "phpgrep" "EDGE_CONTROL_TEXT" "$TEST_TEMP_DIR/edgecases"
+    [[ ! "$output" =~ "readme.txt" ]]
+}
+
+@test "edge: pygrep ignores plain .txt file" {
+    run_as_program "pygrep" "EDGE_CONTROL_TEXT" "$TEST_TEMP_DIR/edgecases"
+    [[ ! "$output" =~ "readme.txt" ]]
 }
